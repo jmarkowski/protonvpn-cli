@@ -9,18 +9,20 @@
 ######################################################
 version=1.1.2
 
+script=${BASH_SOURCE[0]}
+
 if [[ ("$UID" != 0) && ("$1" != "ip") && ("$1" != "-ip") && \
       ("$1" != "--ip") && ! (-z "$1") && ("$1" != "-h") && \
       ("$1" != "--help") && ("$1" != "--h") && ("$1" != "-help") && \
       ("$1" != "help") ]]; then
   echo "[!] Error: The program requires root access."
-  exit 1
+  return 1
 fi
 
 function check_requirements() {
   if [[ -z $(which openvpn) ]]; then
     echo "[!] Error: openvpn is not installed. Install \`openvpn\` package to continue."
-    exit 1
+    return 1
   fi
 
   if [[ ! -z $(which python) ]]; then
@@ -33,34 +35,34 @@ function check_requirements() {
 
   if [[ -z "$python" ]]; then
     echo "[!] Error: python is not installed. Install \`python\` package to continue."
-    exit 1
+    return 1
   fi
 
   if [[ -z $(which dialog) ]]; then
     echo "[!] Error: dialog is not installed. Install \`dialog\` package to continue."
-    exit 1
+    return 1
   fi
   if [[ -z $(which wget) ]]; then
     echo "[!] Error: wget is not installed. Install \`wget\` package to continue."
-    exit 1
+    return 1
   fi
 
   if [[ -z $(which sysctl) && ( $(detect_platform_type) != "Mac" ) ]]; then
     echo "[!] Error: sysctl is not installed. Install \`sysctl\` package to continue."
-    exit 1
+    return 1
   fi
 
   if [[ $(detect_platform_type) == "Linux" ]]; then
     if [[ ( -z $(which iptables) ) ||  ( -z $(which iptables-save) ) || ( -z $(which iptables-restore) ) ]]; then
       echo "[!] Error: iptables is not installed. Install \`iptables\` package to continue."
-      exit 1
+      return 1
     fi
   fi
 
   sha512sum_func
   if [[ -z "$sha512sum_tool" ]]; then
     echo "[!] Error: sha512sum is not installed. Install \`sha512sum\` package to continue."
-    exit 1
+    return 1
   fi
 
   if [[ (! -x "/etc/openvpn/update-resolv-conf") && ( $(detect_platform_type) != "MacOS") ]]; then
@@ -69,7 +71,7 @@ function check_requirements() {
     if [[ "$user_confirm" == "y" || "$user_confirm" == "Y" ]]; then
       install_update_resolv_conf
     else
-      exit 1
+      return 1
     fi
   fi
 }
@@ -103,7 +105,7 @@ function get_protonvpn_cli_home() {
 function install_update_resolv_conf() {
   if [[ ("$UID" != 0) ]]; then
     echo "[!] Error: Installation requires root access."
-    exit 1
+    return 1
   fi
   echo "[*] Installing update-resolv-conf..."
   mkdir -p "/etc/openvpn/"
@@ -115,7 +117,7 @@ function install_update_resolv_conf() {
   else
     echo "[!] Error installing update-resolv-conf."
     rm -f "/etc/openvpn/update-resolv-conf" 2> /dev/null
-    exit 1
+    return 1
   fi
 }
 
@@ -160,7 +162,7 @@ function init_cli() {
   fi
   if  [[ ("$reset_profile" == "n" || "$reset_profile" == "N") ]]; then
      echo "[*] Profile initialization canceled."
-     exit 0
+     return 0
   fi
 
   rm -rf "$(get_protonvpn_cli_home)/"  # Previous profile will be removed/overwritten, if any.
@@ -396,7 +398,7 @@ function is_internet_working_normally() {
 function check_if_internet_is_working_normally() {
   if [[ "$(is_internet_working_normally)" == false ]]; then
     echo "[!] Error: There is an internet connection issue."
-    exit 1
+    return 1
   fi
 }
 
@@ -411,7 +413,7 @@ function is_openvpn_currently_running() {
 function check_if_openvpn_is_currently_running() {
   if [[ $(is_openvpn_currently_running) == true ]]; then
     echo "[!] Error: OpenVPN is already running on this machine."
-    exit 1
+    return 1
   fi
 }
 
@@ -419,8 +421,8 @@ function check_if_profile_initialized() {
   _=$(cat "$(get_protonvpn_cli_home)/protonvpn_openvpn_credentials" "$(get_protonvpn_cli_home)/protonvpn_tier" &> /dev/null)
   if [[ $? != 0 ]]; then
     echo "[!] Profile is not initialized."
-    echo -e "Initialize your profile using: \n    $(basename $0) --init"
-    exit 1
+    echo -e "Initialize your profile using: \n    $(basename $script) --init"
+    return 1
   fi
 }
 
@@ -454,7 +456,7 @@ function openvpn_disconnect() {
         fi
 
         if [[ "$2" != "dont_exit" ]]; then
-          exit 0
+          return 0
         else
           break
         fi
@@ -467,7 +469,7 @@ function openvpn_disconnect() {
       echo "[!] Error disconnecting OpenVPN."
 
       if [[ "$2" != "dont_exit" ]]; then
-        exit 1
+        return 1
       fi
 
     fi
@@ -545,7 +547,7 @@ function openvpn_connect() {
 
         echo "$config_id" > "$(get_protonvpn_cli_home)/.connection_config_id"
         echo "$selected_protocol" > "$(get_protonvpn_cli_home)/.connection_selected_protocol"
-        exit 0
+        return 0
       fi
 
       counter=$((counter+1))
@@ -556,7 +558,7 @@ function openvpn_connect() {
       echo "[!] Reason: Authentication failed. Please check your ProtonVPN OpenVPN credentials."
     fi
     openvpn_disconnect quiet dont_exit
-    exit 1
+    return 1
   } &
   status_check_pid=$!
 
@@ -588,7 +590,7 @@ function openvpn_connect() {
   if [[ $PROTONVPN_CLI_DAEMON != true ]] && (( status_exit == 0 )); then
     status_exit=$openvpn_exit
   fi
-  exit $status_exit
+  return $status_exit
 }
 
 function update_cli() {
@@ -597,39 +599,42 @@ function update_cli() {
   cli_path="/usr/local/bin/protonvpn-cli"
   if [[ ! -f "$cli_path" ]]; then
     echo "[!] Error: protonvpn-cli does not seem to be installed."
-    exit 1
+    return 1
   fi
   echo "[#] Checking for update..."
   current_local_hashsum=$($sha512sum_tool "$cli_path" | cut -d " " -f1)
   remote_=$(wget --timeout 6 -o /dev/null -q -O - 'https://raw.githubusercontent.com/ProtonVPN/protonvpn-cli/master/protonvpn-cli.sh')
   if [[ $? != 0 ]]; then
     echo "[!] Error: There is an error updating protonvpn-cli."
-    exit 1
+    return 1
   fi
   remote_hashsum=$(echo "$remote_" | $sha512sum_tool | cut -d ' ' -f1)
 
   if [[ "$current_local_hashsum" == "$remote_hashsum" ]]; then
     echo "[*] protonvpn-cli is up-to-date!"
-    exit 0
+    return 0
   else
     echo "[#] A new update is available."
     echo "[#] Updating..."
     wget -q --timeout 20 -O "$cli_path" 'https://raw.githubusercontent.com/ProtonVPN/protonvpn-cli/master/protonvpn-cli.sh'
     if [[ $? == 0 ]]; then
       echo "[#] protonvpn-cli has been updated successfully."
-      exit 0
+      return 0
     else
       echo "[!] Error: There is an error updating protonvpn-cli."
-      exit 1
+      return 1
     fi
   fi
 }
 
 function install_cli() {
   mkdir -p "/usr/bin/" "/usr/local/bin/"
-  cli="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+  sh_path="$(cd "$(dirname "$script")" && pwd -P)/$(basename "$script")"
+  py_path=${sh_path%.*}.py
+
   errors_counter=0
-  cp "$cli" "/usr/local/bin/protonvpn-cli" &> /dev/null
+  cp "$sh_path" "/usr/local/lib/protonvpn-lib.sh" &> /dev/null
+  cp "$py_path" "/usr/local/bin/protonvpn-cli" &> /dev/null
   if [[ $? != 0 ]]; then errors_counter=$((errors_counter+1)); fi
 
   ln -s -f "/usr/local/bin/protonvpn-cli" "/usr/local/bin/pvpn" &> /dev/null
@@ -649,10 +654,10 @@ function install_cli() {
 
   if [[ ($errors_counter == 0) || ( ! -z $(which protonvpn-cli) ) ]]; then
     echo "[*] Done."
-    exit 0
+    return 0
   else
     echo "[!] Error: There was an error in installing protonvpn-cli."
-    exit 1
+    return 1
   fi
 }
 
@@ -665,14 +670,14 @@ function uninstall_cli() {
     if [[ $(is_openvpn_currently_running) == true ]]; then  # Checking if OpenVPN is still active.
       echo "[!] Error disconnecting OpenVPN."
       echo "[!] Please disconnect manually and try the uninstallation again."
-      exit 1
+      return 1
     else
       echo "[#] Disconnected."
     fi
   fi
 
   errors_counter=0
-  rm -f "/usr/local/bin/protonvpn-cli" "/usr/local/bin/pvpn" "/usr/bin/protonvpn-cli" "/usr/bin/pvpn" &> /dev/null
+  rm -f "/usr/local/lib/protonvpn-lib.sh" "/usr/local/bin/protonvpn-cli" "/usr/local/bin/pvpn" "/usr/bin/protonvpn-cli" "/usr/bin/pvpn" &> /dev/null
   if [[ $? != 0 ]]; then errors_counter=$((errors_counter+1)); fi
 
   rm -rf "$(get_protonvpn_cli_home)/" &> /dev/null
@@ -680,10 +685,10 @@ function uninstall_cli() {
 
   if [[ ($errors_counter == 0) || ( $(which protonvpn-cli) == "" ) ]]; then
     echo "[*] Done."
-    exit 0
+    return 0
   else
     echo "[!] Error: There was an error in uninstalling protonvpn-cli."
-    exit 1
+    return 1
   fi
 }
 
@@ -703,7 +708,7 @@ function print_console_status() {
 
   if [[ "$current_ip" == "Error." ]]; then
     echo "[Internet Status]: Offline"
-    exit 0
+    return 0
   else
     echo "[Internet Status]: Online"
     echo "[Public IP Address]: $current_ip"
@@ -726,7 +731,7 @@ function print_console_status() {
     echo "[ProtonVPN] [Server Load]: $server_load"
 
   fi
-    exit 0
+    return 0
 
 }
 
@@ -850,7 +855,7 @@ function connect_to_previous_vpn() {
   if ! [[ -f "$(get_protonvpn_cli_home)/.previous_connection_config_id" && \
           -f "$(get_protonvpn_cli_home)/.previous_connection_selected_protocol" ]]; then
     echo "[!] No previous VPN server were found."
-    exit 1
+    return 1
   fi
 
   config_id=$(< "$(get_protonvpn_cli_home)/.previous_connection_config_id")
@@ -863,13 +868,13 @@ function reconnect_to_current_vpn() {
 
   if [[ ! -f "$(get_protonvpn_cli_home)/.connection_config_id" ]] ; then
     echo "[!] Error: ProtonVPN is not currently running."
-    exit 1
+    return 1
   fi
 
   openvpn_disconnect "quiet" "dont_exit"
   if [[ $(is_openvpn_currently_running) == true ]]; then  # Checking if OpenVPN is still active.
     echo "[!] Error disconnecting OpenVPN."
-    exit 1
+    return 1
   else
     echo "[#] Disconnected."
   fi
@@ -927,7 +932,7 @@ function connect_to_specific_server() {
   if [[ "$3" == "country" ]]; then
     echo "[!] Error: Invalid country name, or country not accessible with your plan."
   fi
-  exit 1
+  return 1
 }
 
 function connection_to_vpn_via_dialog_menu() {
@@ -967,7 +972,7 @@ function connection_to_vpn_via_dialog_menu() {
     --menu "ID - Name - Country - Load - EntryIP - ExitIP - Features" 35 300 "$((${#ARRAY[@]}/2))" "${ARRAY[@]}" )
   clear
   if [[ -z "$config_id" ]]; then
-    exit 1
+    return 1
   fi
 
   c=1
@@ -985,7 +990,7 @@ function connection_to_vpn_via_dialog_menu() {
     --menu "Select Network Protocol" 35 80 2 "${available_protocols[@]}")
   clear
   if [[ -z "$selected_protocol" ]]; then
-    exit 1
+    return 1
   fi
 
   openvpn_connect "$config_id" "$selected_protocol"
@@ -1024,7 +1029,7 @@ function dialog_menu() {
     clear
 
     if [[ -z "$menu_selection" ]]; then
-      exit 1
+      return 1
     elif [[ "$menu_selection" == "1" ]]; then
       connect_to_fastest_vpn
     elif [[ "$menu_selection" == "2" ]]; then
@@ -1074,7 +1079,7 @@ function dialog_menu() {
   'servers')
     if [[ -z "$server_list" ]]; then
       echo "[!] Error: Empty server list. This feature may not be accessible with your plan."
-      exit 1
+      return 1
     fi
 
     ARRAY=()
@@ -1118,7 +1123,7 @@ function dialog_menu() {
     ;;
   *)
     echo "[!] Error: Invalid menu entry."
-    exit 1
+    return 1
     ;;
   esac
 }
@@ -1479,91 +1484,4 @@ function show_version() {
     echo
 }
 
-function help_message() {
-    echo
-    echo -e "ProtonVPN Command-Line Tool – v$version\n"
-    echo -e "Usage: $(basename $0) [option]\n"
-    echo "Options:"
-    echo "   --init                              Initialize ProtonVPN profile on the machine."
-    echo "   -c, --connect                       Select and connect to a ProtonVPN server."
-    echo "   -c [server-name] [protocol]         Connect to a ProtonVPN server by name."
-    echo "   -m, --menu                          Select and connect to a ProtonVPN server from a menu."
-    echo "   -r, --random-connect                Connect to a random ProtonVPN server."
-    echo "   -l, --last-connect                  Connect to the previously used ProtonVPN server."
-    echo "   -f, --fastest-connect               Connect to the fastest available ProtonVPN server."
-    echo "   -p2p, --p2p-connect                 Connect to the fastest available P2P ProtonVPN server."
-    echo "   -tor, --tor-connect                 Connect to the fastest available ProtonVPN TOR server."
-    echo "   -sc, --secure-core-connect          Connect to the fastest available ProtonVPN SecureCore server."
-    echo "   -cc, --country-connect              Select and connect to a ProtonVPN server by country."
-    echo "   -cc [country-name] [protocol]       Connect to the fastest available server in a specific country."
-    echo "   -d, --disconnect                    Disconnect the current session."
-    echo "   --reconnect                         Reconnect to the current ProtonVPN server."
-    echo "   --ip                                Print the current public IP address."
-    echo "   --status                            Print connection status."
-    echo "   --update                            Update protonvpn-cli."
-    echo "   --install                           Install protonvpn-cli."
-    echo "   --uninstall                         Uninstall protonvpn-cli."
-    echo "   -v, --version                       Display version."
-    echo "   -h, --help                          Show this help message."
-    echo
-
-    exit 0
-}
-
 check_requirements
-user_input="$1"
-case $user_input in
-  ""|"-h"|"--help"|"--h"|"-help"|"help") help_message
-    ;;
-  "-v"|"--v"|"-version"|"--version") show_version
-    ;;
-  "-d"|"--d"|"-disconnect"|"--disconnect") openvpn_disconnect
-    ;;
-  "-reconnect"|"--reconnect") reconnect_to_current_vpn
-    ;;
-  "-r"|"--r"|"-random"|"--random"|"-random-connect"|"--random-connect") connect_to_random_vpn
-    ;;
-  "-l"|"--l"|"-last-connect"|"--last-connect") connect_to_previous_vpn
-    ;;
-  "-f"|"--f"|"-fastest"|"--fastest"|"-fastest-connect"|"--fastest-connect") connect_to_fastest_vpn
-    ;;
-  "-p2p"|"--p2p"|"-p2p-connect"|"--p2p-connect") connect_to_fastest_p2p_vpn
-    ;;
-  "-tor"|"--tor"|"-tor-connect"|"--tor-connect") connect_to_fastest_tor_vpn
-    ;;
-  "-sc"|"--sc"|"-secure-core-connect"|"--secure-core-connect") connect_to_fastest_secure_core_vpn
-    ;;
-  "-cc"|"--cc"|"-country-connect"|"--country-connect")
-    if [[ $# == 1 ]]; then
-      connection_to_vpn_via_dialog_menu "countries"
-    elif [[ $# -gt 1 ]]; then
-      connect_to_specific_server "$2" "$3" "country"
-    fi
-    ;;
-  "-c"|"-connect"|"--c"|"--connect")
-    if [[ $# == 1 ]]; then
-      connection_to_vpn_via_dialog_menu "servers"
-    elif [[ $# -gt 1 ]]; then
-      connect_to_specific_server "$2" "$3" "server"
-    fi
-    ;;
-  "-m"|"--m"|"-menu"|"--menu") connection_to_vpn_via_general_dialog_menu
-    ;;
-  "ip"|"-ip"|"--ip") check_ip
-    ;;
-  "status"|"-status"|"--status") print_console_status
-    ;;
-  "update"|"-update"|"--update") update_cli
-    ;;
-  "-init"|"--init") init_cli
-    ;;
-  "-install"|"--install") install_cli
-    ;;
-  "-uninstall"|"--uninstall") uninstall_cli
-    ;;
-  *)
-    echo "[!] Invalid input: $user_input"
-    help_message
-    ;;
-esac
-exit 0
